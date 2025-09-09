@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# Pre-commit hook for XRPL Stablecoin Flow
+# This hook runs before every commit to ensure code quality
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${YELLOW}🔍 Running pre-commit checks...${NC}"
+
+# Check if pnpm is installed
+if ! command -v pnpm &> /dev/null; then
+    echo -e "${RED}❌ pnpm is not installed${NC}"
+    exit 1
+fi
+
+# 1. Format check
+echo -e "${YELLOW}📝 Checking code formatting...${NC}"
+if ! pnpm run format; then
+    echo -e "${RED}❌ Format check failed!${NC}"
+    echo -e "${YELLOW}💡 Run 'pnpm run format:fix' to fix formatting issues${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Format check passed${NC}"
+
+# 2. ESLint check
+echo -e "${YELLOW}🔍 Running ESLint check...${NC}"
+if ! pnpm run lint; then
+    echo -e "${RED}❌ ESLint check failed!${NC}"
+    echo -e "${YELLOW}💡 Run 'pnpm run lint:fix' to fix auto-fixable issues${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ ESLint check passed${NC}"
+
+# 3. Type check
+echo -e "${YELLOW}🔍 Running TypeScript type check...${NC}"
+if ! pnpm run typecheck; then
+    echo -e "${RED}❌ Type check failed!${NC}"
+    echo -e "${YELLOW}💡 Fix TypeScript errors before committing${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Type check passed${NC}"
+
+echo -e "${GREEN}✅ All pre-commit checks passed!${NC}"

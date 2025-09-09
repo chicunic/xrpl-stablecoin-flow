@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Pre-push hook for XRPL Stablecoin Flow
+# This hook runs before pushing to remote repository
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Get the remote and branch being pushed to
+remote="$1"
+url="$2"
+
+# Read the branch being pushed
+while read local_ref local_sha remote_ref remote_sha
+do
+    # Extract branch name
+    branch=$(echo "$remote_ref" | sed 's/refs\/heads\///')
+
+    echo -e "${BLUE}🚀 Pre-push checks for branch: ${branch}${NC}"
+
+    # Special checks for production and staging branches
+    if [[ "$branch" == "production" ]] || [[ "$branch" == "staging" ]]; then
+        echo -e "${YELLOW}⚠️  Pushing to ${branch} branch - Running comprehensive checks${NC}"
+
+
+        # 1. Run all code quality checks
+        echo -e "${YELLOW}🔍 Running code quality checks...${NC}"
+        if ! pnpm run check; then
+            echo -e "${RED}❌ Code quality checks failed!${NC}"
+            echo -e "${RED}Cannot push to ${branch} with quality issues${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✅ Code quality checks passed${NC}"
+
+        # Confirmation for production
+        if [[ "$branch" == "production" ]]; then
+            echo -e "${YELLOW}⚠️  You are pushing to PRODUCTION branch${NC}"
+            read -p "Are you sure you want to push? (y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${RED}❌ Push cancelled${NC}"
+                exit 1
+            fi
+        fi
+
+    else
+        # For other branches, run lighter checks
+        echo -e "${YELLOW}📋 Running basic checks...${NC}"
+
+        # 1. Format check
+        echo -e "${YELLOW}📝 Checking code formatting...${NC}"
+        if ! pnpm run format; then
+            echo -e "${RED}❌ Format check failed!${NC}"
+            echo -e "${YELLOW}💡 Run 'pnpm run format:fix' to fix formatting issues${NC}"
+            exit 1
+        fi
+
+        # 2. Type check
+        echo -e "${YELLOW}🔍 Running TypeScript type check...${NC}"
+        if ! pnpm run typecheck; then
+            echo -e "${RED}❌ Type check failed!${NC}"
+            exit 1
+        fi
+
+    fi
+done
+
+echo -e "${GREEN}✅ All pre-push checks passed!${NC}"
+echo -e "${GREEN}🚀 Pushing to ${remote}...${NC}"
