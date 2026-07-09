@@ -41,6 +41,52 @@ Tests [XRPL Check](https://xrpl.org/docs/concepts/payment-types/checks) function
 pnpm test trust-line-token/check
 ```
 
+### Check Burn via Issuer (`check-burn-via-issuer.test.ts`)
+
+Tests using a [Check](https://xrpl.org/docs/concepts/payment-types/checks) to burn tokens back to the issuer, bypassing [DepositAuth](https://xrpl.org/docs/concepts/accounts/depositauth) on the issuer.
+
+| Operation                         | Condition             | Expected                             |
+| --------------------------------- | --------------------- | ------------------------------------ |
+| User → Issuer direct burn         | Issuer DepositAuth on | Failure (tecNO_PERMISSION)           |
+| User creates check to issuer      | Issuer DepositAuth on | Success                              |
+| Issuer cashes user's check (burn) | Issuer DepositAuth on | Success (Check bypasses DepositAuth) |
+
+```bash
+pnpm test trust-line-token/check-burn-via-issuer
+```
+
+### Credential Deposit Auth (`credential-deposit-auth.test.ts`)
+
+Tests a stablecoin compliance flow using [Credentials (XLS-70)](https://xrpl.org/docs/references/protocol/transactions/types/credentialcreate): a DepositAuth-protected receiver only accepts payments from senders holding a valid KYC credential issued by the token issuer.
+
+| Operation                          | Condition                         | Expected                     |
+| ---------------------------------- | --------------------------------- | ---------------------------- |
+| Alice → Bob transfer               | Bob DepositAuth on, no credential | Failure (tecNO_PERMISSION)   |
+| Payment with unaccepted credential | Credential issued, not accepted   | Failure (tecBAD_CREDENTIALS) |
+| Payment with accepted credential   | CredentialIDs referenced          | Success                      |
+| Payment without CredentialIDs      | Credential accepted but not sent  | Failure (tecNO_PERMISSION)   |
+
+```bash
+pnpm test credential-deposit-auth
+```
+
+### Deep Freeze (`deep-freeze.test.ts`)
+
+Tests [Deep Freeze (XLS-77)](https://xrpl.org/docs/concepts/tokens/fungible-tokens/deep-freeze): a deep-frozen holder can neither send nor receive the token, while a regular freeze only blocks sending.
+
+| Operation                              | Condition              | Expected                   |
+| -------------------------------------- | ---------------------- | -------------------------- |
+| Deep freeze without regular freeze     | Trust line not frozen  | Failure (tecNO_PERMISSION) |
+| Deep-frozen holder sends               | Freeze + deep freeze   | Failure (tecPATH_DRY)      |
+| Deep-frozen holder receives            | Freeze + deep freeze   | Failure (tecPATH_DRY)      |
+| Clear regular freeze while deep-frozen | Deep freeze still set  | Failure (tecNO_PERMISSION) |
+| Receive after deep freeze cleared      | Regular freeze remains | Success                    |
+| Send after deep freeze cleared         | Regular freeze remains | Failure (tecPATH_DRY)      |
+
+```bash
+pnpm test deep-freeze
+```
+
 ### DefaultRipple (`default-ripple.test.ts`)
 
 Tests the [DefaultRipple](https://xrpl.org/docs/concepts/tokens/fungible-tokens/rippling) flag.
@@ -118,6 +164,23 @@ Tests boundary conditions.
 pnpm test trust-line-token/edge-cases
 ```
 
+### Escrow (`escrow.test.ts`)
+
+Tests [Token Escrow (XLS-85)](https://xrpl.org/docs/concepts/payment-types/escrow): time-locking issued tokens on-ledger. Release times must be strictly after the parent ledger close time (fix1571), so escrows are created relative to the validated ledger close time.
+
+| Operation                        | Condition                            | Expected                   |
+| -------------------------------- | ------------------------------------ | -------------------------- |
+| Alice escrows tokens to Bob      | Issuer AllowTrustLineLocking not set | Failure (tecNO_PERMISSION) |
+| Alice escrows tokens to Bob      | Issuer AllowTrustLineLocking set     | Success (balance locked)   |
+| Bob finishes before FinishAfter  | Too early                            | Failure (tecNO_PERMISSION) |
+| Bob finishes after FinishAfter   | Time passed                          | Success (tokens delivered) |
+| Alice cancels before CancelAfter | Too early                            | Failure (tecNO_PERMISSION) |
+| Alice cancels after CancelAfter  | Time passed                          | Success (funds returned)   |
+
+```bash
+pnpm test trust-line-token/escrow
+```
+
 ### GlobalFreeze (`global-freeze.test.ts`)
 
 Tests [GlobalFreeze](https://xrpl.org/docs/concepts/tokens/fungible-tokens/freezes#global-freeze) functionality.
@@ -154,6 +217,19 @@ Tests [Individual Freeze](https://xrpl.org/docs/concepts/tokens/fungible-tokens/
 pnpm test trust-line-token/individual-freeze
 ```
 
+### Issuer DepositAuth (`issuer-deposit-auth.test.ts`)
+
+Tests that [DepositAuth](https://xrpl.org/docs/concepts/accounts/depositauth) on the issuer blocks burns (user → issuer payments) until the user is preauthorized.
+
+| Operation          | Condition                    | Expected                   |
+| ------------------ | ---------------------------- | -------------------------- |
+| User → Issuer burn | Issuer DepositAuth on        | Failure (tecNO_PERMISSION) |
+| User → Issuer burn | User preauthorized by issuer | Success                    |
+
+```bash
+pnpm test trust-line-token/issuer-deposit-auth
+```
+
 ### Multi-Issuer (`multi-issuer.test.ts`)
 
 Tests multi-issuer scenarios.
@@ -166,6 +242,28 @@ Tests multi-issuer scenarios.
 
 ```bash
 pnpm test trust-line-token/multi-issuer
+```
+
+### Multisig Issuer Governance (`multisig.test.ts`)
+
+Tests controlling the issuing account with a [SignerList](https://xrpl.org/docs/references/protocol/transactions/types/signerlistset) instead of a single key — the institutional issuer setup.
+
+| Operation                         | Condition                           | Expected                                        |
+| --------------------------------- | ----------------------------------- | ----------------------------------------------- |
+| Mint via multisigned Payment      | 2 of 3 signers (quorum 2)           | Success                                         |
+| Mint with one signature           | Weight below quorum                 | Failure (tefBAD_QUORUM)                         |
+| Disable master key                | Signer list installed               | Success                                         |
+| Master-signed transaction         | Master disabled                     | Failure (tefMASTER_DISABLED)                    |
+| Freeze trust line via multisig    | Master disabled                     | Success                                         |
+| Remove signer list via multisig   | No regular key, master disabled     | Failure (tecNO_ALTERNATIVE_KEY)                 |
+| Rotate signer list via multisig   | Quorum of the old list signs        | Success (full replacement)                      |
+| Removed signer contributes        | After rotation                      | Failure (tefBAD_SIGNATURE)                      |
+| Signer signs with its regular key | Signer's own master disabled        | Success                                         |
+| Signer signs with disabled master | Signer's own master disabled        | Failure (tefMASTER_DISABLED)                    |
+| Multisig-only account as signer   | Member of its own list signs for it | Failure (tefBAD_SIGNATURE, nesting unsupported) |
+
+```bash
+pnpm test trust-line-token/multisig
 ```
 
 ### NoRipple Flow (`no-ripple-flow.test.ts`)

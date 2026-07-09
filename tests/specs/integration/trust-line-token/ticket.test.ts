@@ -1,9 +1,15 @@
-import { MINT_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, getTokenBalance, setupWallets } from "@tests/utils/test.helper.js";
+import { CURRENCY, MINT_AMOUNT } from "@tests/utils/data.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  expectTxFail,
+  getTokenBalance,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import { createTickets, getAvailableTickets } from "@/services/ticket.service.js";
 import { submitTransaction } from "@/services/transaction.service.js";
 import type { Client, Payment, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * Advanced XRPL: Tickets (Presigned / Out-of-Order Execution)
@@ -14,7 +20,7 @@ import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
  * 3. Constructing transactions and binding them to specific Tickets (Sequence = 0, TicketSequence = X).
  * 4. Submitting the transactions entirely OUT OF ORDER to prove they bypass normal Sequence constraints.
  */
-describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
+describe("Trust Line Token Tickets (Out-of-Order Execution)", () => {
   let client: Client;
 
   let issuerWallet: Wallet;
@@ -22,23 +28,15 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Trust Line Ticket Test");
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Trust Line Ticket Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-    }
+    await disconnectClient(client);
   });
 
   it("should setup and fund wallets", async () => {
-    const wallets = await setupWallets(3);
-    issuerWallet = wallets[0]!;
-    aliceWallet = wallets[1]!;
-    bobWallet = wallets[2]!;
-
     // Setup trust lines so Issuer can mint to Alice and Bob
     await createTrustLine(aliceWallet, issuerWallet);
     await createTrustLine(bobWallet, issuerWallet);
@@ -72,7 +70,7 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
       Sequence: 0,
       TicketSequence: ticket1,
       Amount: {
-        currency: "USD",
+        currency: CURRENCY,
         issuer: issuerWallet.address,
         value: MINT_AMOUNT,
       },
@@ -86,7 +84,7 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
       Sequence: 0,
       TicketSequence: ticket2,
       Amount: {
-        currency: "USD",
+        currency: CURRENCY,
         issuer: issuerWallet.address,
         value: MINT_AMOUNT,
       },
@@ -110,12 +108,9 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
 
   describe("Edge Cases", () => {
     it("should FAIL to create more than 250 tickets at once", async () => {
-      try {
-        await createTickets(issuerWallet, 251);
-        throw new Error("Expected to fail when creating > 250 tickets");
-      } catch (error: any) {
-        expect(error.message).toMatch(/temBAD_TICKET_COUNT|TicketCount must be an integer/);
-      }
+      await expect(createTickets(issuerWallet, 251)).rejects.toThrow(
+        /temBAD_TICKET_COUNT|TicketCount must be an integer/,
+      );
     }, 30000);
 
     it("should FAIL to reuse an already consumed Ticket", async () => {
@@ -130,7 +125,7 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
         Sequence: 0,
         TicketSequence: ticketSeq,
         Amount: {
-          currency: "USD",
+          currency: CURRENCY,
           issuer: issuerWallet.address,
           value: MINT_AMOUNT,
         },
@@ -145,18 +140,13 @@ describe("Trust Line Token - Tickets (Out-of-Order Execution)", () => {
         Sequence: 0,
         TicketSequence: ticketSeq,
         Amount: {
-          currency: "USD",
+          currency: CURRENCY,
           issuer: issuerWallet.address,
           value: MINT_AMOUNT,
         },
       });
 
-      try {
-        await submitTransaction(client, tx2, issuerWallet);
-        throw new Error("Expected transaction to fail because ticket was already consumed");
-      } catch (error: any) {
-        expect(error.message).toContain("tefNO_TICKET");
-      }
+      await expectTxFail("tefNO_TICKET", () => submitTransaction(client, tx2, issuerWallet));
     }, 30000);
   });
 });

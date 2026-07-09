@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D26-green.svg)](https://nodejs.org/)
-[![XRPL](https://img.shields.io/badge/XRPL-4.x-brightgreen.svg)](https://xrpl.org/)
+[![XRPL](https://img.shields.io/badge/XRPL-5.x-brightgreen.svg)](https://xrpl.org/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.x-6E9F18.svg)](https://vitest.dev/)
 [![Prettier](https://img.shields.io/badge/Prettier-3.x-F7B93E.svg)](https://prettier.io/)
 [![ESLint](https://img.shields.io/badge/ESLint-10.x-4B32C3.svg)](https://eslint.org/)
@@ -35,15 +35,17 @@ xrpl-token-flow/
 │   ├── config/
 │   │   └── xrpl.config.ts              # XRPL client configuration
 │   └── services/                       # Core Token & Security Services
-│       ├── transaction.service.ts      # Transaction signing and submission
+│       ├── transaction.service.ts      # Transaction signing and submission (single & multisig)
 │       ├── trustline-token.service.ts  # TrustLine lifecycle management
 │       ├── multi-purpose-token.service.ts # MPT lifecycle management
 │       ├── regular-key.service.ts      # Hot/Cold wallet isolation
+│       ├── signer-list.service.ts      # Multisig issuer governance
+│       ├── escrow.service.ts           # Token escrow (XLS-85)
+│       ├── credential.service.ts       # KYC credentials (XLS-70)
 │       └── ticket.service.ts           # Offline & concurrent signing
 ├── tests/
 │   ├── setup.ts                        # Global test setup
 │   ├── setup-local.ts                  # Local Docker test setup
-│   ├── tsconfig.json                   # Tests TypeScript configuration
 │   ├── specs/integration/
 │   │   ├── trust-line-token/           # Trust Line Token test suites
 │   │   └── multi-purpose-token/        # Multi-Purpose Token test suites
@@ -54,8 +56,9 @@ xrpl-token-flow/
 ├── eslint.config.ts                    # ESLint configuration
 ├── docker-compose.yaml                 # Local rippled container
 ├── vitest.config.ts                    # Vitest configuration (local Docker)
-├── vitest.config.ts                    # Vitest configuration
-├── tsconfig.json                       # TypeScript configuration
+├── tsconfig.json                       # TypeScript project references
+├── tsconfig.src.json                   # Source TypeScript configuration
+├── tsconfig.test.json                  # Tests TypeScript configuration
 └── package.json                        # Package dependencies and scripts
 ```
 
@@ -88,14 +91,14 @@ cp .env.example .env
 
 ## Local Network Testing
 
-Run tests against a local standalone rippled in Docker — no faucet or secret key needed. The local node uses the genesis account for wallet funding and is configured with mainnet-matching reserves (1 XRP base / 0.2 XRP owner) via the `[voting]` stanza in `docker/rippled.cfg` ([rippled 1.11.0+](https://github.com/XRPLF/rippled/pull/4319)). The config also sets `[network_id]` to 2 — xrpl.js v5 refuses to connect when `server_info` lacks a network ID, and values ≤ 1024 keep transactions free of the `NetworkID` field.
+Run tests against a local standalone rippled in Docker — no faucet or secret key needed. The local node uses the genesis account for wallet funding and is configured with mainnet-matching reserves (1 XRP base / 0.2 XRP owner) via the `[voting]` stanza in `docker/rippled.cfg` ([rippled 1.11.0+](https://github.com/XRPLF/rippled/pull/4319)). The config also sets `[network_id]` to 2 (devnet) — xrpl.js v5 refuses to connect when `server_info` lacks a network ID, and values ≤ 1024 keep transactions free of the `NetworkID` field.
 
 ```bash
 # Start rippled container
 pnpm docker:up
 
 # Run tests against local network
-pnpm test:local
+pnpm test
 
 # Stop rippled container
 pnpm docker:down

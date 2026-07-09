@@ -42,6 +42,24 @@ pnpm test multi-purpose-token/clawback
 pnpm test multi-purpose-token/edge-cases
 ```
 
+### Escrow (`escrow.test.ts`)
+
+测试 MPT 的 [Token Escrow (XLS-85)](https://xrpl.org/docs/concepts/payment-types/escrow)。Issuance 必须设置 tfMPTCanEscrow；释放时间基于已验证账本的 close time 创建（fix1571）。
+
+注意：与 IOU 托管不同（发行方可随时在账户上开启 asfAllowTrustLineLocking），tfMPTCanEscrow 在创建 Issuance 时一次性确定、之后不可更改——计划支持托管类产品（如 vesting、定期释放）的发行方必须在发行时就设置该 flag，否则只能重新发行迁移。
+
+| 操作                          | tfMPTCanEscrow | 条件     | 预期                    |
+| ----------------------------- | -------------- | -------- | ----------------------- |
+| Alice 向 Bob 托管 MPT         | 未设置         | -        | 失败 (tecNO_PERMISSION) |
+| Alice 向 Bob 托管 MPT         | 已设置         | -        | 成功（余额被锁定）      |
+| Bob 在 FinishAfter 之前领取   | 已设置         | 时间未到 | 失败 (tecNO_PERMISSION) |
+| Bob 在 FinishAfter 之后领取   | 已设置         | 时间已过 | 成功（代币到账）        |
+| Alice 在 CancelAfter 之后取消 | 已设置         | 时间已过 | 成功（资金退回）        |
+
+```bash
+pnpm test multi-purpose-token/escrow
+```
+
 ### Lock/Unlock (`lock.test.ts`)
 
 测试 [Lock](https://xrpl.org/docs/references/protocol/transactions/types/mptokenissuanceset) 功能。

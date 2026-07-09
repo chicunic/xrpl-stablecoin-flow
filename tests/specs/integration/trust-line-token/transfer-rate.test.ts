@@ -1,14 +1,15 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT, TRANSFER_RATE } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
   setupWallets,
 } from "@tests/utils/test.helper.js";
-import { setTransferRate, transferTokens, transferTokensWithSendMax } from "@/services/trustline-token.service.js";
+import { setTransferRate, transferTokens } from "@/services/trustline-token.service.js";
 import type { Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * TransferRate Test
@@ -27,33 +28,19 @@ describe("Trust Line Token TransferRate", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting TransferRate Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("TransferRate Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer, Alice, Bob", () => {
-    it("should create and fund all wallets with DefaultRipple", async () => {
+    it("should configure issuer with DefaultRipple", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
       await setupIssuerWithFlags(issuerWallet);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
     }, 120000);
   });
 
@@ -93,7 +80,7 @@ describe("Trust Line Token TransferRate", () => {
 
       // SendMax covers the transfer fee (0.5%)
       const sendMaxValue = String(Number(TRANSFER_AMOUNT) * 1.01);
-      await transferTokensWithSendMax(aliceWallet, bobWallet, TRANSFER_AMOUNT, sendMaxValue, issuerWallet);
+      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet, { sendMax: sendMaxValue });
 
       const aliceBalanceAfter = await getTokenBalance(aliceWallet, issuerWallet);
       const bobBalanceAfter = await getTokenBalance(bobWallet, issuerWallet);

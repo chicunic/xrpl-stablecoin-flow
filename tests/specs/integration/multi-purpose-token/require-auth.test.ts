@@ -6,10 +6,9 @@ import {
   mintMPToken,
   transferMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, expectTxFail, setupWallets } from "@tests/utils/test.helper.js";
 import type { Client, Wallet } from "xrpl";
 import { MPTokenIssuanceCreateFlags } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken RequireAuth Test
@@ -31,28 +30,18 @@ describe("Multi-Purpose Token RequireAuth", () => {
   let mptIssuanceId: string;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken RequireAuth Test");
+    client = await connectClient("MPToken RequireAuth Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    [issuerWallet, aliceWallet, bobWallet, charlieWallet] = await setupWallets(4);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create wallets and issuance with RequireAuth", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(4);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-      charlieWallet = wallets[3]!;
 
       mptIssuanceId = await createMPTokenIssuance(
         issuerWallet,
@@ -73,7 +62,7 @@ describe("Multi-Purpose Token RequireAuth", () => {
     }, 20000);
 
     it("should fail mint to unapproved holder", async () => {
-      await transferMPToken(issuerWallet, aliceWallet, mptIssuanceId, "1000", "tecNO_AUTH");
+      await expectTxFail("tecNO_AUTH", () => transferMPToken(issuerWallet, aliceWallet, mptIssuanceId, "1000"));
 
       console.log("✅ Mint to unapproved Alice failed: tecNO_AUTH");
     }, 20000);
@@ -111,7 +100,7 @@ describe("Multi-Purpose Token RequireAuth", () => {
       // Charlie opts-in but issuer does not approve
       await authorizeMPToken(charlieWallet, mptIssuanceId);
 
-      await transferMPToken(aliceWallet, charlieWallet, mptIssuanceId, "100", "tecNO_AUTH");
+      await expectTxFail("tecNO_AUTH", () => transferMPToken(aliceWallet, charlieWallet, mptIssuanceId, "100"));
 
       expect(await getMPTokenBalance(charlieWallet, mptIssuanceId)).toBe("0");
 

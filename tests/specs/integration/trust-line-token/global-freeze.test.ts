@@ -1,6 +1,9 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
+  expectTxFail,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
@@ -15,7 +18,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 describe("Trust Line Token GlobalFreeze", () => {
   let client: Client;
@@ -25,35 +27,22 @@ describe("Trust Line Token GlobalFreeze", () => {
   let issuerWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting GlobalFreeze Flag Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("GlobalFreeze Flag Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets with issuer configured", async () => {
+    it("should configure the issuer account", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       await setupIssuerWithFlags(issuerWallet);
 
       await verifyAccountFlag(issuerWallet.address, AccountRootFlags.lsfGlobalFreeze, false);
 
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
       console.log("✅ Issuer setup complete WITHOUT GlobalFreeze flag");
     }, 80000);
   });
@@ -91,7 +80,7 @@ describe("Trust Line Token GlobalFreeze", () => {
 
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
-      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () => transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet));
 
       expect(await getTokenBalance(bobWallet, issuerWallet)).toBe(bobBalanceBefore);
 
@@ -103,7 +92,7 @@ describe("Trust Line Token GlobalFreeze", () => {
 
       const aliceBalanceBefore = await getTokenBalance(aliceWallet, issuerWallet);
 
-      await transferTokens(bobWallet, aliceWallet, TRANSFER_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () => transferTokens(bobWallet, aliceWallet, TRANSFER_AMOUNT, issuerWallet));
 
       expect(await getTokenBalance(aliceWallet, issuerWallet)).toBe(aliceBalanceBefore);
 

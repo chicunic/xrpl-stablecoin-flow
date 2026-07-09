@@ -17,18 +17,6 @@ export async function assignRegularKey(wallet: Wallet, regularKeyAddress: string
 }
 
 /**
- * Removes the assigned Regular Key from an XRPL account.
- */
-export async function removeRegularKey(wallet: Wallet): Promise<void> {
-  const client = getXRPLClient();
-  const tx: SetRegularKey = await client.autofill({
-    TransactionType: "SetRegularKey",
-    Account: wallet.address,
-  }); // Omit RegularKey field to remove it
-  await submitTransaction(client, tx, wallet);
-}
-
-/**
  * Disables the Master Key of an XRPL account.
  * WARNING: A regular key MUST be assigned before doing this, otherwise
  * the account will be permanently locked out!
@@ -39,21 +27,6 @@ export async function disableMasterKey(wallet: Wallet): Promise<void> {
     TransactionType: "AccountSet",
     Account: wallet.address,
     SetFlag: AccountSetAsfFlags.asfDisableMaster,
-  });
-  await submitTransaction(client, tx, wallet);
-}
-
-/**
- * Re-enables the Master Key of an XRPL account.
- * This transaction must be signed by an authorized key (e.g. the Regular Key)
- * if the Master Key is currently disabled.
- */
-export async function enableMasterKey(wallet: Wallet): Promise<void> {
-  const client = getXRPLClient();
-  const tx: AccountSet = await client.autofill({
-    TransactionType: "AccountSet",
-    Account: wallet.address,
-    ClearFlag: AccountSetAsfFlags.asfDisableMaster,
   });
   await submitTransaction(client, tx, wallet);
 }

@@ -1,5 +1,13 @@
 import { CURRENCY, TRANSFER_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, findTrustLine, getTokenBalance, mintTokens, setupWallets } from "@tests/utils/test.helper.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  findTrustLine,
+  getTokenBalance,
+  mintTokens,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import {
   clearNoRippleOnTrustLine,
   setAccountFlag,
@@ -8,7 +16,6 @@ import {
 } from "@/services/trustline-token.service.js";
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * XRPL No Ripple Flow Test
@@ -26,34 +33,18 @@ describe("Trust Line Token NoRipple Flow", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting XRPL No Ripple Flow Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("XRPL No Ripple Flow Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Create and Fund Accounts", () => {
-    it("should create and fund all wallets", async () => {
+    it("should configure issuer WITHOUT DefaultRipple", async () => {
       console.log("\n==================== PHASE 1: CREATE AND FUND ACCOUNTS ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-    }, 60000);
-
-    it("should configure issuer WITHOUT DefaultRipple", async () => {
       await setupIssuerWithDomain(issuerWallet);
       console.log("✅ Flag Domain set");
 

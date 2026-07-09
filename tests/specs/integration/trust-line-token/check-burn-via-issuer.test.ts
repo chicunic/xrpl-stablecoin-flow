@@ -1,6 +1,9 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
+  expectTxFail,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
@@ -16,7 +19,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * Check Burn via Issuer Test
@@ -34,31 +36,19 @@ describe("Trust Line Token Check Burn via Issuer", () => {
   let userWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Check Burn via Issuer Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Check Burn via Issuer Test");
+    [issuerWallet, userWallet] = await setupWallets(2);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets with issuer configured", async () => {
+    it("should configure the issuer account", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(2);
-      issuerWallet = wallets[0]!;
-      userWallet = wallets[1]!;
-
       await setupIssuerWithFlags(issuerWallet);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ User: ${userWallet.address}`);
     }, 60000);
   });
 
@@ -89,7 +79,9 @@ describe("Trust Line Token Check Burn via Issuer", () => {
     it("should fail direct user -> issuer burn with DepositAuth", async () => {
       const userBalanceBefore = await getTokenBalance(userWallet, issuerWallet);
 
-      await transferTokens(userWallet, issuerWallet, TRANSFER_AMOUNT, issuerWallet, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () =>
+        transferTokens(userWallet, issuerWallet, TRANSFER_AMOUNT, issuerWallet),
+      );
 
       expect(await getTokenBalance(userWallet, issuerWallet)).toBe(userBalanceBefore);
 

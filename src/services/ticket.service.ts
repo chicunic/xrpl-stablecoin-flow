@@ -21,8 +21,10 @@ export async function createTickets(wallet: Wallet, count: number): Promise<numb
 
   await submitTransaction(client, tx, wallet);
 
+  if (tx.Sequence === undefined) throw new Error("TicketCreate transaction has no Sequence after autofill");
+
   // The first ticket sequence allocated is exactly the Sequence of the TicketCreate tx + 1
-  return (tx.Sequence ?? 0) + 1;
+  return tx.Sequence + 1;
 }
 
 /**

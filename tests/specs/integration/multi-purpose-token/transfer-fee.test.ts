@@ -5,10 +5,9 @@ import {
   mintMPToken,
   transferMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, setupWallets } from "@tests/utils/test.helper.js";
 import type { Client, Wallet } from "xrpl";
 import { MPTokenIssuanceCreateFlags } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken TransferFee Test
@@ -35,27 +34,18 @@ describe("Multi-Purpose Token TransferFee", () => {
   const TRANSFER_FEE = 1000;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken TransferFee Test");
+    client = await connectClient("MPToken TransferFee Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create issuance with 1% TransferFee", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       mptIssuanceId = await createMPTokenIssuance(
         issuerWallet,
@@ -93,7 +83,7 @@ describe("Multi-Purpose Token TransferFee", () => {
 
       // Transfer 1000 to Bob, Alice pays 1% fee = 10 extra
       // Alice sends 1000 + 10 = 1010, Bob receives 1000
-      await transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "1000", "tesSUCCESS", "1010");
+      await transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "1000", { sendMax: "1010" });
 
       const aliceAfter = BigInt(await getMPTokenBalance(aliceWallet, mptIssuanceId));
       const bobAfter = BigInt(await getMPTokenBalance(bobWallet, mptIssuanceId));

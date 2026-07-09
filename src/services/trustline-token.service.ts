@@ -10,12 +10,13 @@ import type {
   TrustSet,
   Wallet,
 } from "xrpl";
-import { type AccountSetAsfFlags, TrustSetFlags, xrpToDrops } from "xrpl";
+import { type AccountSetAsfFlags, TrustSetFlags, convertStringToHex, xrpToDrops } from "xrpl";
 
 import { getXRPLClient } from "@/config/xrpl.config.js";
+import { currencyToHex, getAccountFlags, hasFlag, submitTransaction } from "./transaction.service.js";
+
 const CURRENCY = "USD";
 const DOMAIN = "example.com";
-import { currencyToHex, getAccountFlags, hasFlag, submitTransaction } from "./transaction.service.js";
 
 // ─── Account Flag Operations ────────────────────────────────────────────────
 
@@ -41,7 +42,6 @@ export async function clearAccountFlag(wallet: Wallet, flag: AccountSetAsfFlags)
 
 export async function setupIssuerWithDomain(wallet: Wallet): Promise<void> {
   const client = getXRPLClient();
-  const { convertStringToHex } = await import("xrpl");
   const tx: AccountSet = await client.autofill({
     TransactionType: "AccountSet",
     Account: wallet.address,
@@ -50,11 +50,10 @@ export async function setupIssuerWithDomain(wallet: Wallet): Promise<void> {
   await submitTransaction(client, tx, wallet);
 }
 
-export async function verifyAccountFlag(address: string, rootFlag: number, expected: boolean): Promise<void> {
+export async function verifyAccountFlag(address: string, flag: number, expected: boolean): Promise<void> {
   const client = getXRPLClient();
   const flags = await getAccountFlags(client, address);
-  if (hasFlag(flags, rootFlag) !== expected)
-    throw new Error(`Expected ${expected}, but got ${hasFlag(flags, rootFlag)}`);
+  if (hasFlag(flags, flag) !== expected) throw new Error(`Expected ${expected}, but got ${hasFlag(flags, flag)}`);
 }
 
 // ─── Transfer Rate Operations ───────────────────────────────────────────────
@@ -71,7 +70,7 @@ export async function setTransferRate(issuer: Wallet, transferRate: number): Pro
 
 // ─── Trust Line Operations ──────────────────────────────────────────────────
 
-export async function freezeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
+async function setTrustLineFlag(issuer: Wallet, user: Wallet, flags: TrustSetFlags, currency: string): Promise<void> {
   const client = getXRPLClient();
   const tx: TrustSet = await client.autofill({
     TransactionType: "TrustSet",
@@ -81,54 +80,34 @@ export async function freezeTrustLine(issuer: Wallet, user: Wallet, currency = C
       issuer: user.address,
       value: "0",
     },
-    Flags: TrustSetFlags.tfSetFreeze,
+    Flags: flags,
   });
   await submitTransaction(client, tx, issuer);
+}
+
+export async function freezeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfSetFreeze, currency);
 }
 
 export async function unfreezeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
-  const client = getXRPLClient();
-  const tx: TrustSet = await client.autofill({
-    TransactionType: "TrustSet",
-    Account: issuer.address,
-    LimitAmount: {
-      currency: currencyToHex(currency),
-      issuer: user.address,
-      value: "0",
-    },
-    Flags: TrustSetFlags.tfClearFreeze,
-  });
-  await submitTransaction(client, tx, issuer);
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfClearFreeze, currency);
+}
+
+// Deep freeze (XLS-77) requires the trust line to already be frozen by the issuer
+export async function deepFreezeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfSetDeepFreeze, currency);
+}
+
+export async function clearDeepFreezeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfClearDeepFreeze, currency);
 }
 
 export async function clearNoRippleOnTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
-  const client = getXRPLClient();
-  const tx: TrustSet = await client.autofill({
-    TransactionType: "TrustSet",
-    Account: issuer.address,
-    LimitAmount: {
-      currency: currencyToHex(currency),
-      issuer: user.address,
-      value: "0",
-    },
-    Flags: TrustSetFlags.tfClearNoRipple,
-  });
-  await submitTransaction(client, tx, issuer);
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfClearNoRipple, currency);
 }
 
 export async function authorizeTrustLine(issuer: Wallet, user: Wallet, currency = CURRENCY): Promise<void> {
-  const client = getXRPLClient();
-  const tx: TrustSet = await client.autofill({
-    TransactionType: "TrustSet",
-    Account: issuer.address,
-    LimitAmount: {
-      currency: currencyToHex(currency),
-      issuer: user.address,
-      value: "0",
-    },
-    Flags: TrustSetFlags.tfSetfAuth,
-  });
-  await submitTransaction(client, tx, issuer);
+  await setTrustLineFlag(issuer, user, TrustSetFlags.tfSetfAuth, currency);
 }
 
 // ─── Token Transfer Operations ──────────────────────────────────────────────
@@ -138,9 +117,9 @@ export async function transferTokens(
   dest: Wallet,
   amount: string,
   issuer: Wallet,
-  expectedResult = "tesSUCCESS",
-  currency = CURRENCY,
+  options: { currency?: string; sendMax?: string } = {},
 ): Promise<void> {
+  const { currency = CURRENCY, sendMax } = options;
   const client = getXRPLClient();
   const tx: Payment = await client.autofill({
     TransactionType: "Payment",
@@ -151,43 +130,12 @@ export async function transferTokens(
       issuer: issuer.address,
       value: amount,
     },
-  });
-  await submitTransaction(client, tx, sender, expectedResult);
-}
-
-export async function transferTokensWithSendMax(
-  sender: Wallet,
-  dest: Wallet,
-  amount: string,
-  sendMax: string,
-  issuer: Wallet,
-  currency = CURRENCY,
-): Promise<void> {
-  const client = getXRPLClient();
-  const tx: Payment = await client.autofill({
-    TransactionType: "Payment",
-    Account: sender.address,
-    Destination: dest.address,
-    Amount: {
-      currency: currencyToHex(currency),
-      issuer: issuer.address,
-      value: amount,
-    },
-    SendMax: {
-      currency: currencyToHex(currency),
-      issuer: issuer.address,
-      value: sendMax,
-    },
+    ...(sendMax ? { SendMax: { currency: currencyToHex(currency), issuer: issuer.address, value: sendMax } } : {}),
   });
   await submitTransaction(client, tx, sender);
 }
 
-export async function transferXRP(
-  sender: Wallet,
-  dest: Wallet,
-  xrpAmount: string,
-  expectedResult = "tesSUCCESS",
-): Promise<void> {
+export async function transferXRP(sender: Wallet, dest: Wallet, xrpAmount: string): Promise<void> {
   const client = getXRPLClient();
   const tx: Payment = await client.autofill({
     TransactionType: "Payment",
@@ -195,7 +143,7 @@ export async function transferXRP(
     Destination: dest.address,
     Amount: xrpToDrops(xrpAmount),
   });
-  await submitTransaction(client, tx, sender, expectedResult);
+  await submitTransaction(client, tx, sender);
 }
 
 // ─── Clawback Operations ────────────────────────────────────────────────────
@@ -302,28 +250,6 @@ export async function cancelCheck(wallet: Wallet, checkId: string): Promise<void
     CheckID: checkId,
   });
   await submitTransaction(client, tx, wallet);
-}
-
-export async function cashCheckExpectFailure(
-  receiver: Wallet,
-  checkId: string,
-  amount: string,
-  issuer: Wallet,
-  expectedResult: string,
-  currency = CURRENCY,
-): Promise<void> {
-  const client = getXRPLClient();
-  const tx: CheckCash = await client.autofill({
-    TransactionType: "CheckCash",
-    Account: receiver.address,
-    CheckID: checkId,
-    Amount: {
-      currency: currencyToHex(currency),
-      issuer: issuer.address,
-      value: amount,
-    },
-  });
-  await submitTransaction(client, tx, receiver, expectedResult);
 }
 
 // ─── Balance Query Operations ───────────────────────────────────────────────

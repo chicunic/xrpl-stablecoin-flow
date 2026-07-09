@@ -1,6 +1,9 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
+  expectTxFail,
   findTrustLine,
   getTokenBalance,
   mintTokens,
@@ -10,7 +13,6 @@ import {
 import { setupIssuerWithDomain, transferTokens, verifyAccountFlag } from "@/services/trustline-token.service.js";
 import type { Client, Wallet } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * DefaultRipple Flag Test
@@ -29,36 +31,18 @@ describe("Trust Line Token DefaultRipple", () => {
   let issuerWithoutDefaultRipple: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting DefaultRipple Flag Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("DefaultRipple Flag Test");
+    [issuerWithDefaultRipple, issuerWithoutDefaultRipple, aliceWallet, bobWallet] = await setupWallets(4);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuers and User Accounts", () => {
-    it("should create and fund all wallets", async () => {
+    it("should configure issuer WITH DefaultRipple flag", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUERS AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(4);
-      issuerWithDefaultRipple = wallets[0]!;
-      issuerWithoutDefaultRipple = wallets[1]!;
-      aliceWallet = wallets[2]!;
-      bobWallet = wallets[3]!;
-
-      console.log(`✅ Issuer with DefaultRipple: ${issuerWithDefaultRipple.address}`);
-      console.log(`✅ Issuer without DefaultRipple: ${issuerWithoutDefaultRipple.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-    }, 80000);
-
-    it("should configure issuer WITH DefaultRipple flag", async () => {
       await setupIssuerWithFlags(issuerWithDefaultRipple);
 
       await verifyAccountFlag(issuerWithDefaultRipple.address, AccountRootFlags.lsfDefaultRipple, true);
@@ -134,7 +118,9 @@ describe("Trust Line Token DefaultRipple", () => {
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWithoutDefaultRipple);
       expect(BigInt(bobBalanceBefore)).toEqual(0n);
 
-      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWithoutDefaultRipple, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () =>
+        transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWithoutDefaultRipple),
+      );
 
       const bobBalanceAfter = await getTokenBalance(bobWallet, issuerWithoutDefaultRipple);
       expect(bobBalanceAfter).toBe(bobBalanceBefore);

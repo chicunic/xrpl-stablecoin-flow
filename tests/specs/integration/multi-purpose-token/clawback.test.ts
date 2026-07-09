@@ -6,10 +6,9 @@ import {
   mintMPToken,
   transferMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, setupWallets } from "@tests/utils/test.helper.js";
 import type { Client, Wallet } from "xrpl";
 import { MPTokenIssuanceCreateFlags } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken Clawback Test
@@ -30,27 +29,18 @@ describe("Multi-Purpose Token Clawback", () => {
   let mptIssuanceId: string;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken Clawback Test");
+    client = await connectClient("MPToken Clawback Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create wallets and issuance with clawback enabled", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       mptIssuanceId = await createMPTokenIssuance(
         issuerWallet,

@@ -7,9 +7,9 @@ import {
   transferMPToken,
   unauthorizeMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { TRANSFER_AMOUNT } from "@tests/utils/data.js";
+import { connectClient, disconnectClient, setupWallets } from "@tests/utils/test.helper.js";
 import type { Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken Basic Lifecycle
@@ -31,38 +31,23 @@ describe("Multi-Purpose Token Basic Lifecycle", () => {
 
   let mptIssuanceId: string;
 
+  // MPT amounts are integer drops of the token (AssetScale applies), unlike the trust-line values in data.ts
   const MINT_AMOUNT = "10000";
-  const TRANSFER_AMOUNT = "500";
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken Basic Lifecycle Test");
+    client = await connectClient("MPToken Basic Lifecycle Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Create MPToken Issuance", () => {
-    it("should create and fund all wallets", async () => {
+    it("should create MPToken issuance with metadata", async () => {
       console.log("\n==================== PHASE 1: CREATE MPTOKEN ISSUANCE ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-    }, 60000);
-
-    it("should create MPToken issuance with metadata", async () => {
       mptIssuanceId = await createMPTokenIssuance(issuerWallet);
       console.log(`✅ MPToken issuance created: ${mptIssuanceId}`);
     }, 30000);

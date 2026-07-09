@@ -7,9 +7,8 @@ import {
   transferMPToken,
   unlockMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, expectTxFail, setupWallets } from "@tests/utils/test.helper.js";
 import type { Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken Lock/Unlock Test
@@ -32,27 +31,18 @@ describe("Multi-Purpose Token Lock/Unlock", () => {
   let mptIssuanceId: string;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken Lock/Unlock Test");
+    client = await connectClient("MPToken Lock/Unlock Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create wallets, issuance, and mint tokens", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       mptIssuanceId = await createMPTokenIssuance(issuerWallet);
 
@@ -75,13 +65,13 @@ describe("Multi-Purpose Token Lock/Unlock", () => {
     }, 20000);
 
     it("should fail transfer FROM locked Alice", async () => {
-      await transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "100", "tecLOCKED");
+      await expectTxFail("tecLOCKED", () => transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "100"));
 
       console.log("✅ Transfer from locked Alice failed: tecLOCKED");
     }, 20000);
 
     it("should fail transfer TO locked Alice", async () => {
-      await transferMPToken(bobWallet, aliceWallet, mptIssuanceId, "100", "tecLOCKED");
+      await expectTxFail("tecLOCKED", () => transferMPToken(bobWallet, aliceWallet, mptIssuanceId, "100"));
 
       console.log("✅ Transfer to locked Alice failed: tecLOCKED");
     }, 20000);
@@ -125,13 +115,13 @@ describe("Multi-Purpose Token Lock/Unlock", () => {
     }, 20000);
 
     it("should fail Alice → Bob transfer during global lock", async () => {
-      await transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "100", "tecLOCKED");
+      await expectTxFail("tecLOCKED", () => transferMPToken(aliceWallet, bobWallet, mptIssuanceId, "100"));
 
       console.log("✅ Alice → Bob failed during global lock: tecLOCKED");
     }, 20000);
 
     it("should fail Bob → Alice transfer during global lock", async () => {
-      await transferMPToken(bobWallet, aliceWallet, mptIssuanceId, "100", "tecLOCKED");
+      await expectTxFail("tecLOCKED", () => transferMPToken(bobWallet, aliceWallet, mptIssuanceId, "100"));
 
       console.log("✅ Bob → Alice failed during global lock: tecLOCKED");
     }, 20000);

@@ -1,14 +1,16 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
-  currencyToHex,
+  disconnectClient,
+  expectTxFail,
   findTrustLine,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
   setupWallets,
-  submitTransaction,
 } from "@tests/utils/test.helper.js";
+import { currencyToHex, submitTransaction } from "@/services/transaction.service.js";
 import {
   freezeTrustLine,
   setAccountFlag,
@@ -19,7 +21,6 @@ import {
 import type { Client, TransactionMetadata, Wallet } from "xrpl";
 import { AccountSetAsfFlags, TrustSetFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 describe("Trust Line Token IndividualFreeze", () => {
   let client: Client;
@@ -28,27 +29,17 @@ describe("Trust Line Token IndividualFreeze", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Individual Freeze Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Individual Freeze Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create wallets, trust lines, and mint tokens", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       await setupIssuerWithFlags(issuerWallet);
 
@@ -62,10 +53,6 @@ describe("Trust Line Token IndividualFreeze", () => {
       const bobBalance = await getTokenBalance(bobWallet, issuerWallet);
       expect(aliceBalance).toBe(MINT_AMOUNT);
       expect(bobBalance).toBe(MINT_AMOUNT);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address} (${aliceBalance} ${CURRENCY})`);
-      console.log(`✅ Bob: ${bobWallet.address} (${bobBalance} ${CURRENCY})`);
     }, 120000);
   });
 
@@ -90,7 +77,7 @@ describe("Trust Line Token IndividualFreeze", () => {
 
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
-      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () => transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet));
 
       const bobBalanceAfter = await getTokenBalance(bobWallet, issuerWallet);
       expect(bobBalanceAfter).toBe(bobBalanceBefore);
@@ -191,7 +178,7 @@ describe("Trust Line Token IndividualFreeze", () => {
         },
         Flags: TrustSetFlags.tfSetFreeze,
       });
-      await submitTransaction(client, freezeAttemptTx, issuerWallet, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () => submitTransaction(client, freezeAttemptTx, issuerWallet));
 
       console.log("✅ Freeze attempt correctly rejected after asfNoFreeze");
     }, 30000);

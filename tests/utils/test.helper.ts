@@ -1,13 +1,10 @@
 import { expect } from "vitest";
 import {
-  type AccountDelete,
   type AccountLinesTrustline,
   type AccountSet,
   AccountSetAsfFlags,
   type Client,
   type Payment,
-  type SubmittableTransaction,
-  type TransactionMetadata,
   type TrustSet,
   Wallet,
   convertStringToHex,
@@ -15,43 +12,61 @@ import {
 } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
 
-import { getXRPLClient } from "@/config/xrpl.config.js";
+import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
+import { currencyToHex, getAccountFlags, hasFlag, submitTransaction } from "@/services/transaction.service.js";
 import { fundWallet } from "./fund.helper.js";
 import { CURRENCY, DOMAIN, TRUST_AMOUNT } from "./data.js";
-import { currencyToHex, getAccountFlags, hasFlag } from "@/services/transaction.service.js";
-export { currencyToHex, getAccountFlags, hasFlag };
 
-export async function submitTransaction(
-  client: Client,
-  tx: SubmittableTransaction,
-  signer: Wallet,
-  expectedResult = "tesSUCCESS",
-): Promise<TransactionMetadata> {
-  const signed = signer.sign(tx);
-  const result = await client.submitAndWait(signed.tx_blob);
-  const meta = result.result.meta as TransactionMetadata;
-  expect(meta.TransactionResult).toBe(expectedResult);
-  return meta;
+// Resolves to a fixed-length tuple when `count` is a literal, so callers can destructure without `!`
+type WalletTuple<N extends number, A extends Wallet[] = []> = number extends N
+  ? Wallet[]
+  : A["length"] extends N
+    ? A
+    : WalletTuple<N, [...A, Wallet]>;
+
+// Assert that a transaction fails with the given result code (tec/tef/tem/ter)
+export async function expectTxFail(expectedResult: string, action: () => Promise<unknown>): Promise<void> {
+  await expect(action()).rejects.toThrow(expectedResult);
 }
 
-// Find a specific trust line between a wallet and an issuer
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Connect the shared XRPL client at suite start, logging the suite name
+export async function connectClient(suiteName: string): Promise<Client> {
+  console.log(`🚀 Starting ${suiteName}`);
+  await initializeXRPLClient();
+  return getXRPLClient();
+}
+
+// Disconnect the shared XRPL client at suite end
+export async function disconnectClient(client: Client): Promise<void> {
+  if (client.isConnected()) {
+    await client.disconnect();
+    console.log("✅ Disconnected from XRPL");
+  }
+}
+
+// Find a specific trust line between a wallet and a peer account
 export async function findTrustLine(
   wallet: Wallet,
-  issuer: Wallet,
+  peer: Wallet,
   currency = CURRENCY,
 ): Promise<AccountLinesTrustline | undefined> {
   const client = getXRPLClient();
   const accountLines = await client.request({
     command: "account_lines",
     account: wallet.address,
-    peer: issuer.address,
+    peer: peer.address,
   });
   return accountLines.result.lines.find(
-    (l: AccountLinesTrustline) => l.currency === currencyToHex(currency) && l.account === issuer.address,
+    (l: AccountLinesTrustline) => l.currency === currencyToHex(currency) && l.account === peer.address,
   );
 }
 
 // Generate and fund multiple wallets, verifying each has the expected balance
+export async function setupWallets<N extends number>(count: N, fundAmount?: string): Promise<WalletTuple<N>>;
 export async function setupWallets(count: number, fundAmount = "2"): Promise<Wallet[]> {
   const wallets = Array.from({ length: count }, () => Wallet.generate());
 
@@ -66,7 +81,10 @@ export async function setupWallets(count: number, fundAmount = "2"): Promise<Wal
       account: wallet.address,
       ledger_index: "validated",
     });
-    expect(dropsToXrp(info.result.account_data.Balance)).toEqual(Number(fundAmount));
+    const balance = dropsToXrp(info.result.account_data.Balance);
+    if (balance !== Number(fundAmount)) {
+      throw new Error(`Wallet ${wallet.address} funded with ${String(balance)} XRP, expected ${fundAmount}`);
+    }
   }
 
   return wallets;
@@ -94,7 +112,9 @@ export async function setupIssuerWithFlags(issuer: Wallet, flags: AccountSetAsfF
   }
 
   const accountFlags = await getAccountFlags(client, issuer.address);
-  expect(hasFlag(accountFlags, AccountRootFlags.lsfDefaultRipple)).toBe(true);
+  if (!hasFlag(accountFlags, AccountRootFlags.lsfDefaultRipple)) {
+    throw new Error(`Issuer ${issuer.address} does not have lsfDefaultRipple set after setup`);
+  }
 }
 
 // Create a trust line from a wallet to an issuer
@@ -118,8 +138,11 @@ export async function createTrustLine(
   await submitTransaction(client, trustTx, wallet);
 
   const line = await findTrustLine(wallet, issuer, currency);
-  expect(line).toBeDefined();
-  expect(line?.limit).toBe(limit);
+  if (line?.limit !== limit) {
+    throw new Error(
+      `Trust line ${wallet.address} → ${issuer.address} has limit ${line?.limit ?? "none"}, expected ${limit}`,
+    );
+  }
 }
 
 // Mint (issue) tokens from issuer to destination
@@ -143,64 +166,4 @@ export async function mintTokens(issuer: Wallet, dest: Wallet, amount: string, c
 export async function getTokenBalance(wallet: Wallet, issuer: Wallet, currency = CURRENCY): Promise<string> {
   const line = await findTrustLine(wallet, issuer, currency);
   return line?.balance ?? "0";
-}
-
-// ─── Account Cleanup (AccountDelete) ───────────────────────────────────────
-
-// Delete all trust lines for a wallet, returning tokens to issuer if needed
-export async function deleteTrustLines(client: Client, wallet: Wallet): Promise<void> {
-  const accountLines = await client.request({
-    command: "account_lines",
-    account: wallet.address,
-  });
-  for (const line of accountLines.result.lines) {
-    const balance = Number(line.balance);
-    // If positive balance, send tokens back to issuer
-    if (balance > 0) {
-      const payTx: Payment = await client.autofill({
-        TransactionType: "Payment",
-        Account: wallet.address,
-        Destination: line.account,
-        Amount: {
-          currency: line.currency,
-          issuer: line.account,
-          value: line.balance,
-        },
-      });
-      await submitTransaction(client, payTx, wallet);
-    }
-    // Set trust line limit to 0 to delete it
-    const trustTx: TrustSet = await client.autofill({
-      TransactionType: "TrustSet",
-      Account: wallet.address,
-      LimitAmount: {
-        currency: line.currency,
-        issuer: line.account,
-        value: "0",
-      },
-    });
-    await submitTransaction(client, trustTx, wallet);
-  }
-}
-
-// Delete account and send remaining XRP to fund wallet (requires 256 ledgers since creation)
-export async function deleteAccount(client: Client, wallet: Wallet): Promise<void> {
-  const fundSecret = process.env.FUND_SECRET;
-  if (!fundSecret) return;
-  const fundAddress = Wallet.fromSecret(fundSecret).address;
-
-  try {
-    await deleteTrustLines(client, wallet);
-
-    const tx: AccountDelete = await client.autofill({
-      TransactionType: "AccountDelete",
-      Account: wallet.address,
-      Destination: fundAddress,
-    });
-    const signed = wallet.sign(tx);
-    await client.submitAndWait(signed.tx_blob);
-    console.log(`♻️ Deleted account ${wallet.address} and reclaimed XRP to fund`);
-  } catch (error) {
-    console.log(`⚠️ Failed to delete account ${wallet.address}: ${error}`);
-  }
 }

@@ -1,9 +1,16 @@
-import { MINT_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, getTokenBalance, setupWallets } from "@tests/utils/test.helper.js";
+import { CURRENCY, MINT_AMOUNT } from "@tests/utils/data.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  expectTxFail,
+  getTokenBalance,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import { assignRegularKey, disableMasterKey } from "@/services/regular-key.service.js";
 import { submitTransaction } from "@/services/transaction.service.js";
-import type { Client, Payment, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
+import type { AccountSet, Client, Payment, SetRegularKey, Wallet } from "xrpl";
+import { AccountSetAsfFlags } from "xrpl";
 
 /**
  * Account Security & Key Rotation (Regular Key)
@@ -14,7 +21,7 @@ import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
  * 3. Proving the Master Key can no longer issue tokens (tefMASTER_DISABLED).
  * 4. Successfully issuing tokens using the hot wallet (Regular Key) signing on behalf of the Issuer.
  */
-describe("Trust Line Token - Key Rotation & Security", () => {
+describe("Trust Line Token Key Rotation & Security", () => {
   let client: Client;
 
   let masterIssuerWallet: Wallet;
@@ -22,27 +29,13 @@ describe("Trust Line Token - Key Rotation & Security", () => {
   let userWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Regular Key & Key Rotation Test");
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Regular Key & Key Rotation Test");
+    [masterIssuerWallet, hotWallet, userWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-    }
+    await disconnectClient(client);
   });
-
-  it("should setup and fund wallets", async () => {
-    const wallets = await setupWallets(3);
-    masterIssuerWallet = wallets[0]!;
-    hotWallet = wallets[1]!;
-    userWallet = wallets[2]!;
-
-    console.log(`✅ Master Issuer: ${masterIssuerWallet.address}`);
-    console.log(`✅ Hot Wallet (Regular Key): ${hotWallet.address}`);
-    console.log(`✅ User: ${userWallet.address}`);
-  }, 60000);
 
   it("should assign the hot wallet as the Regular Key", async () => {
     await assignRegularKey(masterIssuerWallet, hotWallet.address);
@@ -64,19 +57,14 @@ describe("Trust Line Token - Key Rotation & Security", () => {
       Account: masterIssuerWallet.address,
       Destination: userWallet.address,
       Amount: {
-        currency: "USD",
+        currency: CURRENCY,
         issuer: masterIssuerWallet.address,
         value: MINT_AMOUNT,
       },
     });
 
-    try {
-      await submitTransaction(client, tx, masterIssuerWallet);
-      throw new Error("Expected transaction to fail, but it succeeded!");
-    } catch (error: any) {
-      expect(error.message).toContain("tefMASTER_DISABLED");
-      console.log("✅ Master Key successfully blocked from signing (tefMASTER_DISABLED)");
-    }
+    await expectTxFail("tefMASTER_DISABLED", () => submitTransaction(client, tx, masterIssuerWallet));
+    console.log("✅ Master Key successfully blocked from signing (tefMASTER_DISABLED)");
   }, 30000);
 
   it("should SUCCESSFULLY mint tokens using the Regular Key (Hot Wallet)", async () => {
@@ -86,7 +74,7 @@ describe("Trust Line Token - Key Rotation & Security", () => {
       Account: masterIssuerWallet.address, // The action belongs to the Issuer
       Destination: userWallet.address,
       Amount: {
-        currency: "USD",
+        currency: CURRENCY,
         issuer: masterIssuerWallet.address,
         value: MINT_AMOUNT,
       },
@@ -98,47 +86,37 @@ describe("Trust Line Token - Key Rotation & Security", () => {
     const balance = await getTokenBalance(userWallet, masterIssuerWallet);
     expect(balance).toBe(MINT_AMOUNT);
 
-    console.log(`✅ Successfully minted ${MINT_AMOUNT} TUSD using the Hot Wallet as the Regular Key`);
+    console.log(`✅ Successfully minted ${MINT_AMOUNT} ${CURRENCY} using the Hot Wallet as the Regular Key`);
   }, 30000);
 
   describe("Edge Cases", () => {
     let dummyWallet: Wallet;
 
     beforeAll(async () => {
-      dummyWallet = (await setupWallets(1))[0]!;
+      [dummyWallet] = await setupWallets(1);
     });
 
     it("should FAIL to disable Master Key if no Regular Key is assigned (Suicide Prevention)", async () => {
-      try {
-        await disableMasterKey(dummyWallet);
-        throw new Error("Expected to fail because no Regular Key is set");
-      } catch (error: any) {
-        expect(error.message).toContain("tecNO_ALTERNATIVE_KEY");
-      }
+      await expectTxFail("tecNO_ALTERNATIVE_KEY", () => disableMasterKey(dummyWallet));
     });
 
     it("should FAIL to remove Regular Key if Master Key is disabled (Blackhole Prevention)", async () => {
       // For masterIssuerWallet, Master is currently disabled. We use the Hot Wallet to sign the removal tx.
-      const tx: any = await client.autofill({
+      const tx: SetRegularKey = await client.autofill({
         TransactionType: "SetRegularKey",
         Account: masterIssuerWallet.address,
       });
 
-      try {
-        await submitTransaction(client, tx, hotWallet);
-        throw new Error("Expected to fail to prevent blackholing");
-      } catch (error: any) {
-        // XRPL prevents you from removing the regular key if you don't have a master key active
-        expect(error.message).toContain("tecNO_ALTERNATIVE_KEY");
-      }
+      // XRPL prevents you from removing the regular key if you don't have a master key active
+      await expectTxFail("tecNO_ALTERNATIVE_KEY", () => submitTransaction(client, tx, hotWallet));
     });
 
     it("should allow the Regular Key to re-enable the Master Key", async () => {
       // We must clear the asfDisableMaster flag, signed by the Regular Key (hotWallet)
-      const tx: any = await client.autofill({
+      const tx: AccountSet = await client.autofill({
         TransactionType: "AccountSet",
         Account: masterIssuerWallet.address,
-        ClearFlag: 4, // asfDisableMaster
+        ClearFlag: AccountSetAsfFlags.asfDisableMaster,
       });
       await submitTransaction(client, tx, hotWallet);
       console.log("✅ Master Key successfully re-enabled by the Regular Key");
@@ -149,7 +127,7 @@ describe("Trust Line Token - Key Rotation & Security", () => {
         Account: masterIssuerWallet.address,
         Destination: userWallet.address,
         Amount: {
-          currency: "USD",
+          currency: CURRENCY,
           issuer: masterIssuerWallet.address,
           value: MINT_AMOUNT,
         },

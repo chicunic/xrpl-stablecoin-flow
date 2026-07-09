@@ -1,14 +1,16 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
+  expectTxFail,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
   setupWallets,
 } from "@tests/utils/test.helper.js";
-import { cancelCheck, cashCheck, cashCheckExpectFailure, createCheck } from "@/services/trustline-token.service.js";
+import { cancelCheck, cashCheck, createCheck } from "@/services/trustline-token.service.js";
 import type { Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * Check Test
@@ -27,33 +29,19 @@ describe("Trust Line Token Check", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Check Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Check Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets with issuer configured", async () => {
+    it("should configure the issuer account", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
       await setupIssuerWithFlags(issuerWallet);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
     }, 60000);
   });
 
@@ -122,7 +110,7 @@ describe("Trust Line Token Check", () => {
     }, 10000);
 
     it("should fail when Bob tries to cash the first canceled check", async () => {
-      await cashCheckExpectFailure(bobWallet, firstCheckId, TRANSFER_AMOUNT, issuerWallet, "tecNO_ENTRY");
+      await expectTxFail("tecNO_ENTRY", () => cashCheck(bobWallet, firstCheckId, TRANSFER_AMOUNT, issuerWallet));
 
       console.log("✅ Bob correctly failed to cash canceled check");
     }, 10000);
@@ -134,7 +122,7 @@ describe("Trust Line Token Check", () => {
     }, 10000);
 
     it("should fail when Bob tries to cash the second canceled check", async () => {
-      await cashCheckExpectFailure(bobWallet, secondCheckId, TRANSFER_AMOUNT, issuerWallet, "tecNO_ENTRY");
+      await expectTxFail("tecNO_ENTRY", () => cashCheck(bobWallet, secondCheckId, TRANSFER_AMOUNT, issuerWallet));
 
       console.log("✅ Bob correctly failed to cash canceled check");
     }, 10000);

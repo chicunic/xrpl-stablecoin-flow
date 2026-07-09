@@ -1,15 +1,17 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
-  currencyToHex,
+  disconnectClient,
+  expectTxFail,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
   setupWallets,
 } from "@tests/utils/test.helper.js";
+import { currencyToHex } from "@/services/transaction.service.js";
 import { transferTokens } from "@/services/trustline-token.service.js";
 import type { AccountLinesTrustline, Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 describe("Trust Line Token Multi-Issuer", () => {
   let client: Client;
@@ -19,36 +21,20 @@ describe("Trust Line Token Multi-Issuer", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Multi-Issuer Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Multi-Issuer Test");
+    [issuerAWallet, issuerBWallet, aliceWallet, bobWallet] = await setupWallets(4);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Two issuers, both issuing USD", () => {
     it("should create and configure all wallets", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
 
-      const wallets = await setupWallets(4);
-      issuerAWallet = wallets[0]!;
-      issuerBWallet = wallets[1]!;
-      aliceWallet = wallets[2]!;
-      bobWallet = wallets[3]!;
-
       await setupIssuerWithFlags(issuerAWallet);
       await setupIssuerWithFlags(issuerBWallet);
-
-      console.log(`✅ IssuerA: ${issuerAWallet.address}`);
-      console.log(`✅ IssuerB: ${issuerBWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
     }, 120000);
   });
 
@@ -120,7 +106,7 @@ describe("Trust Line Token Multi-Issuer", () => {
       const aliceBalanceA = await getTokenBalance(aliceWallet, issuerAWallet);
       const overAmount = String(Number(aliceBalanceA) + 1000);
 
-      await transferTokens(aliceWallet, bobWallet, overAmount, issuerAWallet, "tecPATH_PARTIAL");
+      await expectTxFail("tecPATH_PARTIAL", () => transferTokens(aliceWallet, bobWallet, overAmount, issuerAWallet));
 
       console.log("✅ Cross-issuer payment correctly rejected: tecPATH_PARTIAL");
     }, 30000);

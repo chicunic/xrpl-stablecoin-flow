@@ -1,8 +1,16 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, findTrustLine, getTokenBalance, mintTokens, setupWallets } from "@tests/utils/test.helper.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  expectTxFail,
+  findTrustLine,
+  getTokenBalance,
+  mintTokens,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import { clearNoRippleOnTrustLine, setupIssuerWithDomain, transferTokens } from "@/services/trustline-token.service.js";
 import type { Client, Wallet } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * Ripple Direction Test (without DefaultRipple)
@@ -32,38 +40,18 @@ describe("Trust Line Token Ripple Direction", () => {
   let userB2: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Ripple Direction Test (without DefaultRipple)");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Ripple Direction Test (without DefaultRipple)");
+    [issuerWallet, userA1, userA2, userB1, userB2] = await setupWallets(5);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup Issuer WITHOUT DefaultRipple", () => {
-    it("should create and fund all wallets", async () => {
+    it("should configure issuer WITHOUT DefaultRipple", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
 
-      const wallets = await setupWallets(5);
-      issuerWallet = wallets[0]!;
-      userA1 = wallets[1]!;
-      userA2 = wallets[2]!;
-      userB1 = wallets[3]!;
-      userB2 = wallets[4]!;
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ userA1 (no_ripple_peer=true): ${userA1.address}`);
-      console.log(`✅ userA2 (no_ripple_peer=true): ${userA2.address}`);
-      console.log(`✅ userB1 (no_ripple_peer=false): ${userB1.address}`);
-      console.log(`✅ userB2 (no_ripple_peer=false): ${userB2.address}`);
-    }, 80000);
-
-    it("should configure issuer WITHOUT DefaultRipple", async () => {
       await setupIssuerWithDomain(issuerWallet);
 
       console.log("✅ Issuer configured WITHOUT DefaultRipple");
@@ -145,7 +133,7 @@ describe("Trust Line Token Ripple Direction", () => {
       const a1Before = await getTokenBalance(userA1, issuerWallet);
       const a2Before = await getTokenBalance(userA2, issuerWallet);
 
-      await transferTokens(userA1, userA2, TRANSFER_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () => transferTokens(userA1, userA2, TRANSFER_AMOUNT, issuerWallet));
 
       expect(await getTokenBalance(userA1, issuerWallet)).toBe(a1Before);
       expect(await getTokenBalance(userA2, issuerWallet)).toBe(a2Before);

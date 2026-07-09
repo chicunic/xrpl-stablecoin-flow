@@ -1,5 +1,5 @@
 import { XRP_TRANSFER_AMOUNT } from "@tests/utils/data.js";
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, setupWallets } from "@tests/utils/test.helper.js";
 import {
   clearAccountFlag,
   getXRPBalance,
@@ -10,7 +10,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 describe("Trust Line Token DisallowXRP", () => {
   let client: Client;
@@ -19,30 +18,12 @@ describe("Trust Line Token DisallowXRP", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting DisallowXRP Flag Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("DisallowXRP Flag Test");
+    [aliceWallet, bobWallet] = await setupWallets(2);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
-  });
-
-  describe("Phase 1: Setup - Create Test Accounts", () => {
-    it("should create and fund all wallets", async () => {
-      console.log("\n==================== PHASE 1: SETUP - CREATE TEST ACCOUNTS ====================");
-
-      const wallets = await setupWallets(2);
-      aliceWallet = wallets[0]!;
-      bobWallet = wallets[1]!;
-
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-    }, 40000);
+    await disconnectClient(client);
   });
 
   describe("Phase 2: Enable DisallowXRP on Bob", () => {

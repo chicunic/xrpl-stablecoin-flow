@@ -1,4 +1,4 @@
-import { setupWallets } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, setupWallets } from "@tests/utils/test.helper.js";
 import { createTickets, getAvailableTickets } from "@/services/ticket.service.js";
 import { submitTransaction } from "@/services/transaction.service.js";
 import {
@@ -7,9 +7,8 @@ import {
   authorizeMPToken,
   getMPTokenBalance,
 } from "@/services/multi-purpose-token.service.js";
-import type { Client, MPTokenIssuanceCreate, Payment, Wallet } from "xrpl";
+import type { Client, MPTokenIssuanceCreate, Payment, TransactionMetadata, Wallet } from "xrpl";
 import { encodeMPTokenMetadata } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * Advanced XRPL: Tickets for MPT
@@ -18,7 +17,7 @@ import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
  * 1. Allocating Tickets for the MPT Issuer.
  * 2. Creating an MPT and Minting tokens out-of-order.
  */
-describe("Multi-Purpose Token - Tickets", () => {
+describe("Multi-Purpose Token Tickets", () => {
   let client: Client;
 
   let issuerWallet: Wallet;
@@ -26,22 +25,14 @@ describe("Multi-Purpose Token - Tickets", () => {
   let mptIssuanceId: string;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPT Ticket Test");
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("MPT Ticket Test");
+
+    [issuerWallet, userWallet] = await setupWallets(2);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-    }
+    await disconnectClient(client);
   });
-
-  it("should setup and fund wallets", async () => {
-    const wallets = await setupWallets(2);
-    issuerWallet = wallets[0]!;
-    userWallet = wallets[1]!;
-  }, 60000);
 
   it("should allocate 2 tickets for the MPT issuer", async () => {
     const firstTicket = await createTickets(issuerWallet, 2);
@@ -69,7 +60,7 @@ describe("Multi-Purpose Token - Tickets", () => {
     });
 
     const meta = await submitTransaction(client, createTx, issuerWallet);
-    mptIssuanceId = (meta as unknown as { mpt_issuance_id: string }).mpt_issuance_id;
+    mptIssuanceId = (meta as TransactionMetadata & { mpt_issuance_id: string }).mpt_issuance_id;
     expect(mptIssuanceId).toBeDefined();
 
     // 2. User authorizes MPT (uses normal sequence for simplicity here)

@@ -1,5 +1,12 @@
 import { CLAWBACK_AMOUNT, CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, getTokenBalance, mintTokens, setupWallets } from "@tests/utils/test.helper.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  getTokenBalance,
+  mintTokens,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import {
   clawbackTokens,
   clearAccountFlag,
@@ -11,7 +18,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * AllowTrustLineClawback Flag Test
@@ -30,34 +36,18 @@ describe("Trust Line Token Clawback", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting AllowTrustLineClawback Flag Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("AllowTrustLineClawback Flag Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets", async () => {
+    it("should configure issuer account with AllowTrustLineClawback", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-    }, 60000);
-
-    it("should configure issuer account with AllowTrustLineClawback", async () => {
       await setupIssuerWithDomain(issuerWallet);
       await setAccountFlag(issuerWallet, AccountSetAsfFlags.asfAllowTrustLineClawback);
       await setAccountFlag(issuerWallet, AccountSetAsfFlags.asfDefaultRipple);

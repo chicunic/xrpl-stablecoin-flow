@@ -1,6 +1,9 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT, XRP_TRANSFER_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
+  disconnectClient,
+  expectTxFail,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
@@ -19,7 +22,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * DepositAuth Flag Test
@@ -39,33 +41,19 @@ describe("Trust Line Token DepositAuth", () => {
   let issuerWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting DepositAuth Flag Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("DepositAuth Flag Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets with issuer configured", async () => {
+    it("should configure the issuer account", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-
       await setupIssuerWithFlags(issuerWallet);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
     }, 60000);
   });
 
@@ -101,7 +89,9 @@ describe("Trust Line Token DepositAuth", () => {
     it("should fail Alice -> Bob USD transfer with DepositAuth enabled", async () => {
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
-      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () =>
+        transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet),
+      );
 
       expect(await getTokenBalance(bobWallet, issuerWallet)).toBe(bobBalanceBefore);
 
@@ -111,7 +101,7 @@ describe("Trust Line Token DepositAuth", () => {
     it("should fail Alice -> Bob XRP transfer with DepositAuth enabled", async () => {
       const bobXrpBalanceBefore = await getXRPBalance(bobWallet);
 
-      await transferXRP(aliceWallet, bobWallet, XRP_TRANSFER_AMOUNT, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () => transferXRP(aliceWallet, bobWallet, XRP_TRANSFER_AMOUNT));
 
       const bobXrpBalanceAfter = await getXRPBalance(bobWallet);
       expect(bobXrpBalanceAfter).toEqual(bobXrpBalanceBefore);
@@ -122,7 +112,7 @@ describe("Trust Line Token DepositAuth", () => {
     it("should fail Issuer -> Bob USD mint with DepositAuth enabled", async () => {
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
-      await transferTokens(issuerWallet, bobWallet, MINT_AMOUNT, issuerWallet, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () => transferTokens(issuerWallet, bobWallet, MINT_AMOUNT, issuerWallet));
 
       expect(await getTokenBalance(bobWallet, issuerWallet)).toBe(bobBalanceBefore);
 
@@ -192,7 +182,9 @@ describe("Trust Line Token DepositAuth", () => {
     it("should fail Alice -> Bob USD transfer after removing preauthorization", async () => {
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
-      await transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () =>
+        transferTokens(aliceWallet, bobWallet, TRANSFER_AMOUNT, issuerWallet),
+      );
 
       expect(await getTokenBalance(bobWallet, issuerWallet)).toBe(bobBalanceBefore);
 
@@ -202,7 +194,7 @@ describe("Trust Line Token DepositAuth", () => {
     it("should fail Alice -> Bob XRP transfer after removing preauthorization", async () => {
       const bobXrpBalanceBefore = await getXRPBalance(bobWallet);
 
-      await transferXRP(aliceWallet, bobWallet, XRP_TRANSFER_AMOUNT, "tecNO_PERMISSION");
+      await expectTxFail("tecNO_PERMISSION", () => transferXRP(aliceWallet, bobWallet, XRP_TRANSFER_AMOUNT));
 
       const bobXrpBalanceAfter = await getXRPBalance(bobWallet);
       expect(bobXrpBalanceAfter).toEqual(bobXrpBalanceBefore);

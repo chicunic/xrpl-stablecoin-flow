@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.x-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D26-green.svg)](https://nodejs.org/)
-[![XRPL](https://img.shields.io/badge/XRPL-4.x-brightgreen.svg)](https://xrpl.org/)
+[![XRPL](https://img.shields.io/badge/XRPL-5.x-brightgreen.svg)](https://xrpl.org/)
 [![Vitest](https://img.shields.io/badge/Vitest-4.x-6E9F18.svg)](https://vitest.dev/)
 [![Prettier](https://img.shields.io/badge/Prettier-3.x-F7B93E.svg)](https://prettier.io/)
 [![ESLint](https://img.shields.io/badge/ESLint-10.x-4B32C3.svg)](https://eslint.org/)
@@ -35,15 +35,17 @@ xrpl-token-flow/
 │   ├── config/
 │   │   └── xrpl.config.ts              # XRPL 客户端配置
 │   └── services/                       # 核心代币与安全服务
-│       ├── transaction.service.ts      # 交易签名与提交
+│       ├── transaction.service.ts      # 交易签名与提交（单签与多签）
 │       ├── trustline-token.service.ts  # TrustLine 生命周期管理
 │       ├── multi-purpose-token.service.ts # MPT 生命周期管理
 │       ├── regular-key.service.ts      # 冷热钱包隔离与密钥轮转
+│       ├── signer-list.service.ts      # 多签发行方治理
+│       ├── escrow.service.ts           # 代币托管 Escrow（XLS-85）
+│       ├── credential.service.ts       # KYC 凭证（XLS-70）
 │       └── ticket.service.ts           # 离线签名与并发控制
 ├── tests/
 │   ├── setup.ts                        # 全局测试设置
 │   ├── setup-local.ts                  # 本地 Docker 测试设置
-│   ├── tsconfig.json                   # 测试 TypeScript 配置
 │   ├── specs/integration/
 │   │   ├── trust-line-token/           # Trust Line Token 测试套件
 │   │   └── multi-purpose-token/        # Multi-Purpose Token 测试套件
@@ -54,8 +56,9 @@ xrpl-token-flow/
 ├── eslint.config.ts                    # ESLint 配置
 ├── docker-compose.yaml                 # 本地 rippled 容器
 ├── vitest.config.ts                    # Vitest 配置 (本地 Docker)
-├── vitest.config.ts                    # Vitest 配置
-├── tsconfig.json                       # TypeScript 配置
+├── tsconfig.json                       # TypeScript 项目引用配置
+├── tsconfig.src.json                   # 源码 TypeScript 配置
+├── tsconfig.test.json                  # 测试 TypeScript 配置
 └── package.json                        # 包依赖和脚本
 ```
 

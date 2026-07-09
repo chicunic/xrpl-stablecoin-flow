@@ -42,6 +42,24 @@ Tests boundary conditions.
 pnpm test multi-purpose-token/edge-cases
 ```
 
+### Escrow (`escrow.test.ts`)
+
+Tests [Token Escrow (XLS-85)](https://xrpl.org/docs/concepts/payment-types/escrow) for MPTs. The issuance must set tfMPTCanEscrow; release times are created relative to the validated ledger close time (fix1571).
+
+Note: unlike IOU escrow, where the issuer can enable asfAllowTrustLineLocking on its account at any time, tfMPTCanEscrow is fixed when the issuance is created and cannot be changed afterwards — issuers planning escrow-based products (e.g. vesting or scheduled release) must set it upfront or reissue.
+
+| Operation                       | tfMPTCanEscrow | Condition   | Expected                   |
+| ------------------------------- | -------------- | ----------- | -------------------------- |
+| Alice escrows MPT to Bob        | Not set        | -           | Failure (tecNO_PERMISSION) |
+| Alice escrows MPT to Bob        | Set            | -           | Success (balance locked)   |
+| Bob finishes before FinishAfter | Set            | Too early   | Failure (tecNO_PERMISSION) |
+| Bob finishes after FinishAfter  | Set            | Time passed | Success (tokens delivered) |
+| Alice cancels after CancelAfter | Set            | Time passed | Success (funds returned)   |
+
+```bash
+pnpm test multi-purpose-token/escrow
+```
+
 ### Lock/Unlock (`lock.test.ts`)
 
 Tests [Lock](https://xrpl.org/docs/references/protocol/transactions/types/mptokenissuanceset) functionality.

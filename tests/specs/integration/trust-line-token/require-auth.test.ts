@@ -1,5 +1,14 @@
 import { CURRENCY, MINT_AMOUNT, TRANSFER_AMOUNT } from "@tests/utils/data.js";
-import { createTrustLine, findTrustLine, getTokenBalance, mintTokens, setupWallets } from "@tests/utils/test.helper.js";
+import {
+  connectClient,
+  createTrustLine,
+  disconnectClient,
+  expectTxFail,
+  findTrustLine,
+  getTokenBalance,
+  mintTokens,
+  setupWallets,
+} from "@tests/utils/test.helper.js";
 import {
   authorizeTrustLine,
   clearAccountFlag,
@@ -10,7 +19,6 @@ import {
 import type { Client, Wallet } from "xrpl";
 import { AccountSetAsfFlags } from "xrpl";
 import { AccountRootFlags } from "xrpl/dist/npm/models/ledger/index.js";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * RequireAuth Test
@@ -30,36 +38,18 @@ describe("Trust Line Token RequireAuth", () => {
   let charlieWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting RequireAuth Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("RequireAuth Test");
+    [issuerWallet, aliceWallet, bobWallet, charlieWallet] = await setupWallets(4);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup - Create Issuer and User Accounts", () => {
-    it("should create and fund all wallets", async () => {
+    it("should configure issuer account with RequireAuth and DefaultRipple", async () => {
       console.log("\n==================== PHASE 1: SETUP - CREATE ISSUER AND USER ACCOUNTS ====================");
 
-      const wallets = await setupWallets(4);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
-      charlieWallet = wallets[3]!;
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address}`);
-      console.log(`✅ Bob: ${bobWallet.address}`);
-      console.log(`✅ Charlie: ${charlieWallet.address}`);
-    }, 80000);
-
-    it("should configure issuer account with RequireAuth and DefaultRipple", async () => {
       await setAccountFlag(issuerWallet, AccountSetAsfFlags.asfRequireAuth);
       await setAccountFlag(issuerWallet, AccountSetAsfFlags.asfDefaultRipple);
 
@@ -87,12 +77,7 @@ describe("Trust Line Token RequireAuth", () => {
       await authorizeTrustLine(issuerWallet, aliceWallet);
 
       // Check from issuer's perspective (authorized flag appears on issuer's side)
-      const issuerAccountLines = await client.request({
-        command: "account_lines",
-        account: issuerWallet.address,
-        peer: aliceWallet.address,
-      });
-      const issuerLine = issuerAccountLines.result.lines.find((l) => l.account === aliceWallet.address);
+      const issuerLine = await findTrustLine(issuerWallet, aliceWallet);
       expect(issuerLine?.authorized).toBeTruthy();
 
       console.log("✅ Alice trust line authorized and verified successfully");
@@ -111,12 +96,7 @@ describe("Trust Line Token RequireAuth", () => {
     it("should authorize Bob trust line from issuer", async () => {
       await authorizeTrustLine(issuerWallet, bobWallet);
 
-      const issuerAccountLines = await client.request({
-        command: "account_lines",
-        account: issuerWallet.address,
-        peer: bobWallet.address,
-      });
-      const issuerLine = issuerAccountLines.result.lines.find((l) => l.account === bobWallet.address);
+      const issuerLine = await findTrustLine(issuerWallet, bobWallet);
       expect(issuerLine?.authorized).toBeTruthy();
 
       console.log("✅ Bob trust line authorized successfully");
@@ -159,13 +139,15 @@ describe("Trust Line Token RequireAuth", () => {
     }, 30000);
 
     it("should fail to issue tokens to unauthorized Charlie", async () => {
-      await transferTokens(issuerWallet, charlieWallet, MINT_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () => transferTokens(issuerWallet, charlieWallet, MINT_AMOUNT, issuerWallet));
 
       console.log("✅ Payment to unauthorized Charlie correctly failed with tecPATH_DRY");
     }, 10000);
 
     it("should fail Alice transfer to unauthorized Charlie", async () => {
-      await transferTokens(aliceWallet, charlieWallet, TRANSFER_AMOUNT, issuerWallet, "tecPATH_DRY");
+      await expectTxFail("tecPATH_DRY", () =>
+        transferTokens(aliceWallet, charlieWallet, TRANSFER_AMOUNT, issuerWallet),
+      );
 
       console.log("✅ Transfer to unauthorized Charlie correctly failed with tecPATH_DRY");
     }, 10000);

@@ -41,7 +41,7 @@ export async function createMPTokenIssuance(
   const client = getXRPLClient();
   const metadata = encodeMPTokenMetadata(MPT_METADATA);
 
-  const createTx: MPTokenIssuanceCreate = await client.autofill({
+  const tx: MPTokenIssuanceCreate = await client.autofill({
     TransactionType: "MPTokenIssuanceCreate",
     Account: issuer.address,
     AssetScale: options.assetScale ?? 2,
@@ -51,11 +51,7 @@ export async function createMPTokenIssuance(
     MPTokenMetadata: metadata,
   });
 
-  const signed = issuer.sign(createTx);
-  const result = await client.submitAndWait(signed.tx_blob);
-  const meta = result.result.meta as TransactionMetadata & { mpt_issuance_id?: string };
-  if (meta.TransactionResult !== "tesSUCCESS")
-    throw new Error(`Expected tesSUCCESS, but got ${meta.TransactionResult}`);
+  const meta = (await submitTransaction(client, tx, issuer)) as TransactionMetadata & { mpt_issuance_id?: string };
   if (meta.mpt_issuance_id === undefined) throw new Error(`meta.mpt_issuance_id is not defined`);
 
   return meta.mpt_issuance_id;
@@ -63,39 +59,39 @@ export async function createMPTokenIssuance(
 
 export async function authorizeMPToken(holder: Wallet, mptIssuanceId: string): Promise<void> {
   const client = getXRPLClient();
-  const authTx: MPTokenAuthorize = await client.autofill({
+  const tx: MPTokenAuthorize = await client.autofill({
     TransactionType: "MPTokenAuthorize",
     Account: holder.address,
     MPTokenIssuanceID: mptIssuanceId,
   });
-  await submitTransaction(client, authTx, holder);
+  await submitTransaction(client, tx, holder);
 }
 
 export async function issuerAuthorizeMPToken(issuer: Wallet, holder: Wallet, mptIssuanceId: string): Promise<void> {
   const client = getXRPLClient();
-  const authTx: MPTokenAuthorize = await client.autofill({
+  const tx: MPTokenAuthorize = await client.autofill({
     TransactionType: "MPTokenAuthorize",
     Account: issuer.address,
     MPTokenIssuanceID: mptIssuanceId,
     Holder: holder.address,
   });
-  await submitTransaction(client, authTx, issuer);
+  await submitTransaction(client, tx, issuer);
 }
 
 export async function unauthorizeMPToken(holder: Wallet, mptIssuanceId: string): Promise<void> {
   const client = getXRPLClient();
-  const unauthTx: MPTokenAuthorize = await client.autofill({
+  const tx: MPTokenAuthorize = await client.autofill({
     TransactionType: "MPTokenAuthorize",
     Account: holder.address,
     MPTokenIssuanceID: mptIssuanceId,
     Flags: { tfMPTUnauthorize: true },
   });
-  await submitTransaction(client, unauthTx, holder);
+  await submitTransaction(client, tx, holder);
 }
 
 export async function mintMPToken(issuer: Wallet, dest: Wallet, mptIssuanceId: string, amount: string): Promise<void> {
   const client = getXRPLClient();
-  const mintTx: Payment = await client.autofill({
+  const tx: Payment = await client.autofill({
     TransactionType: "Payment",
     Account: issuer.address,
     Destination: dest.address,
@@ -104,7 +100,7 @@ export async function mintMPToken(issuer: Wallet, dest: Wallet, mptIssuanceId: s
       value: amount,
     },
   });
-  await submitTransaction(client, mintTx, issuer);
+  await submitTransaction(client, tx, issuer);
 }
 
 export async function transferMPToken(
@@ -112,11 +108,11 @@ export async function transferMPToken(
   dest: Wallet,
   mptIssuanceId: string,
   amount: string,
-  expectedResult = "tesSUCCESS",
-  sendMax?: string,
+  options: { sendMax?: string } = {},
 ): Promise<void> {
+  const { sendMax } = options;
   const client = getXRPLClient();
-  const transferTx: Payment = await client.autofill({
+  const tx: Payment = await client.autofill({
     TransactionType: "Payment",
     Account: sender.address,
     Destination: dest.address,
@@ -126,7 +122,7 @@ export async function transferMPToken(
     },
     ...(sendMax ? { SendMax: { mpt_issuance_id: mptIssuanceId, value: sendMax } } : {}),
   });
-  await submitTransaction(client, transferTx, sender, expectedResult);
+  await submitTransaction(client, tx, sender);
 }
 
 export async function clawbackMPToken(
@@ -136,7 +132,7 @@ export async function clawbackMPToken(
   amount: string,
 ): Promise<void> {
   const client = getXRPLClient();
-  const clawbackTx: Clawback = await client.autofill({
+  const tx: Clawback = await client.autofill({
     TransactionType: "Clawback",
     Account: issuer.address,
     Amount: {
@@ -145,45 +141,41 @@ export async function clawbackMPToken(
     },
     Holder: holder.address,
   });
-  await submitTransaction(client, clawbackTx, issuer);
+  await submitTransaction(client, tx, issuer);
 }
 
 export async function lockMPToken(issuer: Wallet, mptIssuanceId: string, holder?: Wallet): Promise<void> {
   const client = getXRPLClient();
-  const lockTx: MPTokenIssuanceSet = await client.autofill({
+  const tx: MPTokenIssuanceSet = await client.autofill({
     TransactionType: "MPTokenIssuanceSet",
     Account: issuer.address,
     MPTokenIssuanceID: mptIssuanceId,
     ...(holder ? { Holder: holder.address } : {}),
     Flags: { tfMPTLock: true },
   });
-  await submitTransaction(client, lockTx, issuer);
+  await submitTransaction(client, tx, issuer);
 }
 
 export async function unlockMPToken(issuer: Wallet, mptIssuanceId: string, holder?: Wallet): Promise<void> {
   const client = getXRPLClient();
-  const unlockTx: MPTokenIssuanceSet = await client.autofill({
+  const tx: MPTokenIssuanceSet = await client.autofill({
     TransactionType: "MPTokenIssuanceSet",
     Account: issuer.address,
     MPTokenIssuanceID: mptIssuanceId,
     ...(holder ? { Holder: holder.address } : {}),
     Flags: { tfMPTUnlock: true },
   });
-  await submitTransaction(client, unlockTx, issuer);
+  await submitTransaction(client, tx, issuer);
 }
 
-export async function destroyMPTokenIssuance(
-  issuer: Wallet,
-  mptIssuanceId: string,
-  expectedResult = "tesSUCCESS",
-): Promise<void> {
+export async function destroyMPTokenIssuance(issuer: Wallet, mptIssuanceId: string): Promise<void> {
   const client = getXRPLClient();
-  const destroyTx: MPTokenIssuanceDestroy = await client.autofill({
+  const tx: MPTokenIssuanceDestroy = await client.autofill({
     TransactionType: "MPTokenIssuanceDestroy",
     Account: issuer.address,
     MPTokenIssuanceID: mptIssuanceId,
   });
-  await submitTransaction(client, destroyTx, issuer, expectedResult);
+  await submitTransaction(client, tx, issuer);
 }
 
 export async function getMPTokenBalance(holder: Wallet, mptIssuanceId: string): Promise<string> {
@@ -193,11 +185,8 @@ export async function getMPTokenBalance(holder: Wallet, mptIssuanceId: string): 
     account: holder.address,
     type: "mptoken",
   });
-  // SDK types don't include MPToken in AccountObject union — cast needed
+  // SDK's LedgerEntry union doesn't include MPToken — cast needed
   const objects = accountObjects.result.account_objects as unknown as MPToken[];
   const mpt = objects.find((obj) => obj.MPTokenIssuanceID === mptIssuanceId);
-  if (!mpt) return "0";
-  const mptData = mpt as unknown as Record<string, unknown>;
-  const amount = (mptData.MPTAmount ?? mptData.mpt_amount ?? mptData.mpt_token_amount) as string | number | undefined;
-  return amount ? String(amount) : "0";
+  return mpt?.MPTAmount ?? "0";
 }

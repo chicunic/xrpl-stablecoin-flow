@@ -1,18 +1,19 @@
 import { CURRENCY, MEMO_DATA, MEMO_TYPE, MINT_AMOUNT, TRANSFER_AMOUNT, TRUST_AMOUNT } from "@tests/utils/data.js";
 import {
+  connectClient,
   createTrustLine,
-  currencyToHex,
+  disconnectClient,
+  expectTxFail,
   findTrustLine,
   getTokenBalance,
   mintTokens,
   setupIssuerWithFlags,
   setupWallets,
-  submitTransaction,
 } from "@tests/utils/test.helper.js";
+import { currencyToHex, submitTransaction } from "@/services/transaction.service.js";
 import { transferTokens } from "@/services/trustline-token.service.js";
 import type { Client, TransactionMetadata, Wallet } from "xrpl";
 import { convertStringToHex } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 describe("Trust Line Token Edge Cases", () => {
   let client: Client;
@@ -21,27 +22,17 @@ describe("Trust Line Token Edge Cases", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting Edge Cases Test");
-
-    await initializeXRPLClient();
-    client = getXRPLClient();
-  }, 30000);
+    client = await connectClient("Edge Cases Test");
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3);
+  }, 90000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Setup", () => {
     it("should create wallets, trust lines, and mint tokens", async () => {
       console.log("\n==================== PHASE 1: SETUP ====================");
-
-      const wallets = await setupWallets(3);
-      issuerWallet = wallets[0]!;
-      aliceWallet = wallets[1]!;
-      bobWallet = wallets[2]!;
 
       await setupIssuerWithFlags(issuerWallet);
 
@@ -50,10 +41,6 @@ describe("Trust Line Token Edge Cases", () => {
 
       await mintTokens(issuerWallet, aliceWallet, MINT_AMOUNT);
       await mintTokens(issuerWallet, bobWallet, MINT_AMOUNT);
-
-      console.log(`✅ Issuer: ${issuerWallet.address}`);
-      console.log(`✅ Alice: ${aliceWallet.address} (${MINT_AMOUNT} ${CURRENCY})`);
-      console.log(`✅ Bob: ${bobWallet.address} (${MINT_AMOUNT} ${CURRENCY})`);
     }, 120000);
   });
 
@@ -126,7 +113,9 @@ describe("Trust Line Token Edge Cases", () => {
       const bobBalanceBefore = await getTokenBalance(bobWallet, issuerWallet);
 
       // Issuer tries to mint over-limit to Bob
-      await transferTokens(issuerWallet, bobWallet, overLimitAmount, issuerWallet, "tecPATH_PARTIAL");
+      await expectTxFail("tecPATH_PARTIAL", () =>
+        transferTokens(issuerWallet, bobWallet, overLimitAmount, issuerWallet),
+      );
 
       const bobBalanceAfter = await getTokenBalance(bobWallet, issuerWallet);
       expect(bobBalanceAfter).toBe(bobBalanceBefore);
@@ -183,8 +172,7 @@ describe("Trust Line Token Edge Cases", () => {
     it("should zero out trust line when limit set to 0 and balance is 0", async () => {
       console.log("\n==================== PHASE 6: TRUST LINE DELETION ====================");
 
-      const wallets = await setupWallets(1);
-      const carolWallet = wallets[0]!;
+      const [carolWallet] = await setupWallets(1);
 
       await createTrustLine(carolWallet, issuerWallet);
 

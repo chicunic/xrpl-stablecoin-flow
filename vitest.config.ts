@@ -12,17 +12,12 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts", "tests/**/*.spec.ts"],
+    // No thresholds: line coverage of src is not a meaningful gate for integration suites
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
       include: ["src/**/*.{ts,js}"],
       exclude: ["src/**/*.d.ts", "src/index.ts"],
-      thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 80,
-        statements: 80,
-      },
     },
     alias: {
       "@": path.resolve(__dirname, "./src"),

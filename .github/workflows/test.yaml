@@ -37,3 +37,7 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      - name: Dump rippled logs on failure
+        if: failure()
+        run: docker compose logs

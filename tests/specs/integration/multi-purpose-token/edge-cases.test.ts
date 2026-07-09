@@ -1,14 +1,15 @@
 import {
+  DEFAULT_MPT_FLAGS,
   authorizeMPToken,
   createMPTokenIssuance,
   destroyMPTokenIssuance,
   getMPTokenBalance,
   mintMPToken,
 } from "@/services/multi-purpose-token.service.js";
-import { setupWallets, submitTransaction } from "@tests/utils/test.helper.js";
+import { connectClient, disconnectClient, expectTxFail, setupWallets } from "@tests/utils/test.helper.js";
+import { submitTransaction } from "@/services/transaction.service.js";
 import type { Client, Payment, Wallet } from "xrpl";
 import { MPTokenIssuanceCreateFlags } from "xrpl";
-import { getXRPLClient, initializeXRPLClient } from "@/config/xrpl.config.js";
 
 /**
  * MPToken Edge Cases
@@ -28,29 +29,20 @@ describe("Multi-Purpose Token Edge Cases", () => {
   let bobWallet: Wallet;
 
   beforeAll(async () => {
-    console.log("🚀 Starting MPToken Edge Cases Test");
+    client = await connectClient("MPToken Edge Cases Test");
 
-    await initializeXRPLClient();
-    client = getXRPLClient();
-
-    const wallets = await setupWallets(3, "3");
-    issuerWallet = wallets[0]!;
-    aliceWallet = wallets[1]!;
-    bobWallet = wallets[2]!;
+    [issuerWallet, aliceWallet, bobWallet] = await setupWallets(3, "3");
   }, 60000);
 
   afterAll(async () => {
-    if (client.isConnected()) {
-      await client.disconnect();
-      console.log("✅ Disconnected from XRPL");
-    }
+    await disconnectClient(client);
   });
 
   describe("Phase 1: Mint Exceeding MaximumAmount", () => {
     it("should fail mint that exceeds MaximumAmount", async () => {
       console.log("\n==================== PHASE 1: EXCEED MAX AMOUNT ====================");
 
-      const mptId = await createMPTokenIssuance(issuerWallet, DEFAULT_FLAGS, {
+      const mptId = await createMPTokenIssuance(issuerWallet, DEFAULT_MPT_FLAGS, {
         maxAmount: "1000",
       });
 
@@ -67,7 +59,7 @@ describe("Multi-Purpose Token Edge Cases", () => {
           value: "1",
         },
       });
-      await submitTransaction(client, mintTx, issuerWallet, "tecPATH_PARTIAL");
+      await expectTxFail("tecPATH_PARTIAL", () => submitTransaction(client, mintTx, issuerWallet));
 
       expect(await getMPTokenBalance(aliceWallet, mptId)).toBe("1000");
 
@@ -96,7 +88,7 @@ describe("Multi-Purpose Token Edge Cases", () => {
           value: "100",
         },
       });
-      await submitTransaction(client, transferTx, aliceWallet, "tecNO_AUTH");
+      await expectTxFail("tecNO_AUTH", () => submitTransaction(client, transferTx, aliceWallet));
 
       expect(await getMPTokenBalance(bobWallet, noTransferId)).toBe("0");
 
@@ -113,7 +105,7 @@ describe("Multi-Purpose Token Edge Cases", () => {
       await authorizeMPToken(aliceWallet, mptId);
       await mintMPToken(issuerWallet, aliceWallet, mptId, "500");
 
-      await destroyMPTokenIssuance(issuerWallet, mptId, "tecHAS_OBLIGATIONS");
+      await expectTxFail("tecHAS_OBLIGATIONS", () => destroyMPTokenIssuance(issuerWallet, mptId));
 
       console.log("✅ Destroy with outstanding balance failed: tecHAS_OBLIGATIONS");
     }, 60000);
@@ -133,7 +125,7 @@ describe("Multi-Purpose Token Edge Cases", () => {
         Account: aliceWallet.address,
         MPTokenIssuanceID: mptId,
       });
-      await submitTransaction(client, authTx, aliceWallet, "tecDUPLICATE");
+      await expectTxFail("tecDUPLICATE", () => submitTransaction(client, authTx, aliceWallet));
 
       console.log("✅ Double authorization correctly failed: tecDUPLICATE");
     }, 40000);
@@ -155,14 +147,9 @@ describe("Multi-Purpose Token Edge Cases", () => {
           value: "100",
         },
       });
-      await submitTransaction(client, mintTx, issuerWallet, "tecNO_AUTH");
+      await expectTxFail("tecNO_AUTH", () => submitTransaction(client, mintTx, issuerWallet));
 
       console.log("✅ Mint to non-opted-in account failed: tecNO_AUTH");
     }, 40000);
   });
 });
-
-const DEFAULT_FLAGS =
-  MPTokenIssuanceCreateFlags.tfMPTCanTransfer |
-  MPTokenIssuanceCreateFlags.tfMPTCanLock |
-  MPTokenIssuanceCreateFlags.tfMPTCanClawback;
